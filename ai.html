@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Precision Assistant</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 768px; /* Tablet/Desktop width */
+            height: 90vh;
+            max-height: 800px;
+            background-color: white;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-radius: 1.5rem;
+            overflow: hidden;
+        }
+        /* Custom scrollbar for message history */
+        #messages::-webkit-scrollbar {
+            width: 8px;
+        }
+        #messages::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* slate-300 */
+            border-radius: 4px;
+        }
+        #messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        /* Custom loading animation */
+        .dot {
+            width: 8px;
+            height: 8px;
+            background-color: #4f46e5; /* indigo-600 */
+            border-radius: 50%;
+            display: inline-block;
+            margin: 0 2px;
+            animation: dot-flicker 1.4s infinite ease-in-out both;
+        }
+        .dot:nth-child(1) { animation-delay: -0.32s; }
+        .dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes dot-flicker {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        /* Message styling for markdown content */
+        .message-content {
+            white-space: pre-wrap;
+        }
+        /* Styling for links within markdown content */
+        .message-content a {
+            color: #4f46e5; /* indigo-600 */
+            text-decoration: underline;
+            font-weight: 500;
+        }
+        .message-content p {
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .message-content h1, .message-content h2, .message-content h3 {
+            font-weight: 700;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .message-content ul, .message-content ol {
+            margin-left: 1.5rem;
+            list-style-type: disc;
+        }
+        /* Styling for generated and uploaded images */
+        .message-content img, #image-preview-img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.75rem; /* rounded-xl */
+            margin-top: 0.75rem; /* mt-3 */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        #image-preview {
+            background-color: #f0f4ff;
+            border: 1px dashed #a5b4fc;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="chat-container">
+        <!-- Header -->
+        <header class="p-4 border-b border-gray-200 bg-indigo-600 text-white">
+            <h1 class="text-xl font-bold">🎯 Precise AI Assistant</h1>
+            <p class="text-sm opacity-80">Contextual Chat, Image Generation, and Image Understanding Enabled</p>
+        </header>
+
+        <!-- Message History -->
+        <div id="messages" class="flex-grow p-4 space-y-4 overflow-y-auto">
+            <div class="flex justify-start">
+                <div class="bg-indigo-100 p-3 rounded-xl rounded-tl-none shadow max-w-xs md:max-w-md">
+                    <p class="text-sm text-indigo-800">Hello! I am a precise assistant. I can remember our conversation now!</p>
+                    <ul class="list-disc ml-4 text-xs">
+                        <li>I can include **clickable links** in my answers and provide **source citations**.</li>
+                        <li>Ask follow-up questions without repeating context.</li>
+                        <li>Type **"generate image"** to create a picture (this starts a new topic).</li>
+                        <li>Click the **paperclip** to upload an image and ask a question about it.</li>
+                        <li class="mt-1 font-bold text-red-600">Note: For local use, you must insert your Gemini API key in the script.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="p-4 hidden bg-white border-t border-gray-200">
+            <div class="flex items-center space-x-2">
+                <div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">AI</div>
+                <div class="bg-gray-100 p-3 rounded-xl rounded-bl-none shadow">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Form -->
+        <form id="chat-form" class="p-4 border-t border-gray-200 bg-white">
+            <!-- Image Preview Area -->
+            <div id="image-preview" class="hidden p-2 mb-2 rounded-xl">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <img id="image-preview-img" class="h-10 w-10 object-cover rounded-md" src="" alt="Attached Image">
+                        <span id="image-file-name" class="text-sm text-gray-700 truncate"></span>
+                    </div>
+                    <button type="button" id="clear-image-button" class="text-gray-500 hover:text-red-600 p-1 rounded-full hover:bg-red-100 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex space-x-3">
+                <!-- File Upload Button -->
+                <input type="file" id="file-input" accept="image/*" class="hidden">
+                <button type="button" id="upload-button" class="p-3 text-indigo-600 hover:text-indigo-700 transition duration-150 rounded-xl hover:bg-indigo-100 disabled:opacity-50" aria-label="Attach File">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                        <path d="M12 9a3.75 3.75 0 1 0 0 7.5A3.75 3.75 0 0 0 12 9Z" />
+                        <path fill-rule="evenodd" d="M18.75 2.25H5.25A2.25 2.25 0 0 0 3 4.5v15a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 19.5V4.5a2.25 2.25 0 0 0-2.25-2.25ZM5.25 3.75h13.5c.621 0 1.125.504 1.125 1.125v9.716l-3.29-3.411a.75.75 0 0 0-1.061-.088l-2.484 2.115.42 4.135a.75.75 0 0 1-.091.564l-3.218 3.51V15c0-.621.504-1.125 1.125-1.125h3.75a.75.75 0 0 0 0-1.5H9.375A2.625 2.625 0 0 0 6.75 16.5v2.812l-1.472-1.611A1.125 1.125 0 0 1 4.5 17.062V4.875c0-.621.504-1.125 1.125-1.125Z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+
+                <!-- User Input -->
+                <input
+                    type="text"
+                    id="user-input"
+                    placeholder='Ask a question, generate an image, or follow up on our chat...'
+                    class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                    autocomplete="off"
+                    required
+                >
+                <!-- Send Button -->
+                <button
+                    type="submit"
+                    id="send-button"
+                    class="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition duration-150 shadow-md flex items-center justify-center disabled:bg-indigo-400"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                        <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405Z" />
+                    </svg>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // --- API & Config Setup ---
+        // IMPORTANT: If running locally outside of the Google Canvas environment, 
+        // you MUST insert your actual Gemini API key here:
+        const apiKey = ""; 
+        // Gemini API for text (with grounding) and multimodal (text + image)
+        const geminiApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        // Imagen API for image generation
+        const imagenApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+
+        // UI Elements
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const messagesContainer = document.getElementById('messages');
+        const loadingIndicator = document.getElementById('loading');
+        const sendButton = document.getElementById('send-button');
+        const uploadButton = document.getElementById('upload-button');
+        const fileInput = document.getElementById('file-input');
+        const clearImageButton = document.getElementById('clear-image-button');
+        const imagePreview = document.getElementById('image-preview');
+        const imagePreviewImg = document.getElementById('image-preview-img');
+        const imageFileNameSpan = document.getElementById('image-file-name');
+
+
+        // Global State
+        let attachedImageBase64 = null;
+        let attachedImageMimeType = null;
+        // Global History for conversational context
+        // Format: [{ role: "user" | "model", text: "..." }]
+        let chatHistory = []; 
+
+
+        // System prompt for text generation
+        const systemPrompt = "You are a highly precise, articulate, and knowledgeable AI assistant. Always provide clear, concise, and well-structured answers, using markdown formatting when helpful. When answering factual questions, prioritize accuracy and thoroughness. Use the conversation history provided in the contents array to maintain context. If external information is used, include inline markdown links or explicit source citations.";
+
+        // --- Utility Functions ---
+
+        /**
+         * Converts a File object to a Base64 string.
+         */
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64String = reader.result.split(',')[1];
+                    resolve({ base64: base64String, mimeType: file.type });
+                };
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        /**
+         * Converts the simple chatHistory array and the current query/image into the
+         * complex contents array format required by the Gemini API for contextual calls.
+         */
+        function buildContentsPayload(query, base64Data, mimeType) {
+            // 1. Convert simple text history to API format
+            const contents = chatHistory.map(turn => ({
+                role: turn.role,
+                parts: [{ text: turn.text }]
+            }));
+
+            // 2. Append the current user turn. If multimodal, include the image data.
+            const userParts = [{ text: query }];
+            if (base64Data && mimeType) {
+                userParts.push({
+                    inlineData: {
+                        mimeType: mimeType,
+                        data: base64Data
+                    }
+                });
+            }
+            contents.push({ role: 'user', parts: userParts });
+
+            return contents;
+        }
+
+        /**
+         * Appends a message to the chat history (UI).
+         */
+        function displayMessage(sender, text, sources = [], imageUrl = null) {
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+
+            const messageBubble = document.createElement('div');
+            messageBubble.className = `p-3 rounded-xl shadow max-w-xs md:max-w-md ${
+                sender === 'user'
+                    ? 'bg-indigo-600 text-white rounded-br-none'
+                    : 'bg-indigo-100 text-gray-800 rounded-tl-none message-content'
+            }`;
+
+            // Convert markdown text to HTML for better display, which correctly
+            // renders markdown links [text](url) into clickable <a> tags.
+            if (sender === 'ai') {
+                // Ensure text is sanitized before setting innerHTML
+                messageBubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+            } else {
+                messageBubble.textContent = text;
+            }
+
+            // Add image if available
+            if (imageUrl) {
+                const img = document.createElement('img');
+                img.src = imageUrl;
+                img.alt = sender === 'user' ? 'Uploaded Image' : 'Generated Image';
+                messageBubble.appendChild(img);
+            }
+
+            messageWrapper.appendChild(messageBubble);
+
+            // Add sources if available and it's a text response
+            if (sender === 'ai' && sources.length > 0) {
+                const sourcesDiv = document.createElement('div');
+                sourcesDiv.className = 'mt-2 text-xs text-gray-500 italic border-t border-gray-300 pt-2';
+                let sourcesHtml = '<strong>Sources:</strong><ul>';
+                sources.slice(0, 3).forEach(source => { // Limit to top 3 sources
+                    if (source.title && source.uri) {
+                         // Note: These source links are separate from inline links in the text
+                         sourcesHtml += `<li><a href="${source.uri}" target="_blank" class="text-indigo-600 hover:text-indigo-800">${source.title}</a></li>`;
+                    }
+                });
+                sourcesHtml += '</ul>';
+                sourcesDiv.innerHTML = sourcesHtml;
+                messageBubble.appendChild(sourcesDiv);
+            }
+
+            messagesContainer.appendChild(messageWrapper);
+            // Scroll to the latest message
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // --- API Call Functions ---
+
+        /**
+         * Calls the Gemini API for contextual text or multimodal queries.
+         */
+        async function callGeminiTextOrMultimodalAPI(contentsPayload, attempt = 0) {
+            const maxRetries = 5;
+            const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 1000);
+
+            // Check if the last part of the conversation included an image
+            const isMultimodal = contentsPayload[contentsPayload.length - 1].parts.length > 1;
+
+            const payload = {
+                contents: contentsPayload,
+                // Only use Google Search grounding if it's NOT a multimodal/image analysis request
+                tools: isMultimodal ? undefined : [{ "google_search": {} }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const response = await fetch(geminiApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    if (attempt < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return callGeminiTextOrMultimodalAPI(contentsPayload, attempt + 1);
+                    }
+                    throw new Error(`API response failed with status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    let sources = [];
+                    // Extract sources only if grounding was used
+                    if (!isMultimodal) {
+                        const groundingMetadata = candidate.groundingMetadata;
+                        if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                            sources = groundingMetadata.groundingAttributions
+                                .map(attribution => ({
+                                    uri: attribution.web?.uri,
+                                    title: attribution.web?.title,
+                                }))
+                                .filter(source => source.uri && source.title);
+                        }
+                    }
+                    return { text: text, sources: sources, imageUrl: null };
+                } else {
+                     throw new Error("No valid response text received from the API.");
+                }
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return { text: "Sorry, I ran into an error while processing that request.", sources: [], imageUrl: null };
+            }
+        }
+
+        /**
+         * Calls the Imagen API for image generation.
+         */
+        async function callImagenAPI(prompt, attempt = 0) {
+            const maxRetries = 5;
+            const delay = Math.pow(2, attempt) * 1000 + (Math.random() * 1000);
+
+            const payload = {
+                instances: [{ prompt: prompt }],
+                parameters: { "sampleCount": 1 }
+            };
+
+            try {
+                const response = await fetch(imagenApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    if (attempt < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return callImagenAPI(prompt, attempt + 1);
+                    }
+                    throw new Error(`Imagen API response failed with status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const base64Data = result.predictions?.[0]?.bytesBase64Encoded;
+
+                if (base64Data) {
+                    return { text: "Here is the image I generated based on your request:", sources: [], imageUrl: `data:image/png;base64,${base64Data}` };
+                } else {
+                    return { text: "I couldn't generate an image for that prompt. Please try a different description, or ensure the prompt is specific.", sources: [], imageUrl: null };
+                }
+
+            } catch (error) {
+                console.error("Imagen API Error:", error);
+                return { text: "Sorry, I ran into an error while generating the image. Please try again.", sources: [], imageUrl: null };
+            }
+        }
+
+        // --- Event Handlers ---
+
+        // Handles the file selection
+        fileInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                try {
+                    const { base64, mimeType } = await fileToBase64(file);
+                    attachedImageBase64 = base64;
+                    attachedImageMimeType = mimeType;
+
+                    // Show preview
+                    imagePreviewImg.src = URL.createObjectURL(file);
+                    imageFileNameSpan.textContent = file.name;
+                    imagePreview.classList.remove('hidden');
+
+                } catch (e) {
+                    console.error("File reading error:", e);
+                    // Handle error gracefully
+                    attachedImageBase64 = null;
+                    imagePreview.classList.add('hidden');
+                }
+            }
+        });
+
+        // Triggers the hidden file input
+        uploadButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // Clears the attached image
+        clearImageButton.addEventListener('click', () => {
+            attachedImageBase64 = null;
+            attachedImageMimeType = null;
+            fileInput.value = ''; // Clear file input state
+            imagePreview.classList.add('hidden');
+        });
+
+        /**
+         * Main function to handle sending the user's message.
+         */
+        async function sendMessage(event) {
+            event.preventDefault();
+            const query = userInput.value.trim();
+
+            if (!query && !attachedImageBase64) return;
+
+            // --- API Key Check for Local Execution ---
+            if (apiKey === "AIzaSyCj748rEdD2hxUjAOQa56N1UudjJoFzozM") {
+                const message = "### API Key Error\n\nYou must provide a valid **Gemini API key** inside the `const apiKey = \"\";` variable in the JavaScript code to run this application outside of the Google Canvas environment.";
+                displayMessage('ai', message, [], null);
+                userInput.value = '';
+                // Since no API call was made, we don't push anything to chatHistory
+                clearImageButton.click(); 
+                return;
+            }
+
+            // 1. Determine the request type
+            const lowerQuery = query.toLowerCase();
+            const isImageGenerationRequest = lowerQuery.includes('generate image') || lowerQuery.includes('create image') || lowerQuery.includes('draw');
+            const isMultimodalRequest = attachedImageBase64 !== null;
+
+            // Save current image state before clearing it
+            const currentBase64 = attachedImageBase64;
+            const currentMimeType = attachedImageMimeType;
+            
+            // --- CONTEXT MANAGEMENT ---
+            if (isImageGenerationRequest) {
+                // Clear context for image generation, as it's a new, stateless task
+                chatHistory = [];
+            } else {
+                // For text/multimodal, add the user's text to history
+                chatHistory.push({ role: "user", text: query });
+            }
+
+            // 2. Display user message
+            // Use the object URL for the uploaded image preview in the chat bubble
+            const userImageUrl = isMultimodalRequest ? imagePreviewImg.src : null;
+            displayMessage('user', query, [], userImageUrl);
+            userInput.value = '';
+
+            // 3. Reset image state in UI/global variables
+            clearImageButton.click(); 
+
+            // 4. Disable UI and show loading
+            sendButton.disabled = true;
+            userInput.disabled = true;
+            uploadButton.disabled = true;
+            loadingIndicator.classList.remove('hidden');
+
+            // 5. Call appropriate API
+            let responseData;
+            if (isImageGenerationRequest) {
+                // Stateless image generation
+                responseData = await callImagenAPI(query);
+            } else {
+                // Contextual Text or Multimodal
+                const contentsPayload = buildContentsPayload(query, currentBase64, currentMimeType);
+                responseData = await callGeminiTextOrMultimodalAPI(contentsPayload);
+
+                if (responseData.text && !responseData.imageUrl) {
+                    // Add AI response to history only if it was a successful text response
+                    chatHistory.push({ role: "model", text: responseData.text });
+                } else if (!responseData.text && !responseData.imageUrl) {
+                    // Handle API failure: remove the last user entry from history if no response was generated
+                    chatHistory.pop(); 
+                }
+            }
+
+            // 6. Display AI response
+            displayMessage('ai', responseData.text, responseData.sources, responseData.imageUrl);
+
+            // 7. Restore UI state
+            loadingIndicator.classList.add('hidden');
+            sendButton.disabled = false;
+            userInput.disabled = false;
+            uploadButton.disabled = false;
+            userInput.focus();
+        }
+
+        // --- Init ---
+
+        chatForm.addEventListener('submit', sendMessage);
+
+        // Load marked (for markdown to HTML conversion) and DOMPurify (for security)
+        function loadScripts() {
+            const markedScript = document.createElement('script');
+            markedScript.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+            document.head.appendChild(markedScript);
+
+            const purifyScript = document.createElement('script');
+            purifyScript.src = 'https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js';
+            document.head.appendChild(purifyScript);
+
+            // Wait for scripts to load before setting up marked options
+            purifyScript.onload = () => {
+                if (typeof marked !== 'undefined') {
+                    marked.setOptions({
+                        breaks: true, // Enable GFM line breaks
+                        gfm: true,    // Enable GitHub Flavored Markdown
+                    });
+                }
+            };
+        }
+
+        window.onload = loadScripts;
+    </script>
+</body>
+</html>
